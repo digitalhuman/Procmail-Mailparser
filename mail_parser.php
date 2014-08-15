@@ -77,6 +77,7 @@ class mail_parser {
         $result = array(
             "from" => $this->get_from(),
             "to" => $this->get_to(),
+            "cc" => $this->get_cc(),
             "datetime" => $this->get_datetime(),
             "subject" => $this->get_subject(),
             "body" => $this->get_text_body(),
@@ -116,11 +117,15 @@ class mail_parser {
             if(count($parts) == 2 && $parts[1] >= 2){
                 //Attachement part
                 $mime_part = mailparse_msg_get_part($this->message, "{$file}");        
-                $body_parts = mailparse_msg_get_part_data($mime_part);                
-                $filename = $body_parts['disposition-filename'];
+                $body_parts = mailparse_msg_get_part_data($mime_part); 
                 
-                if(file_put_contents($this->attachment_store.$filename, base64_decode(substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']))) !== false){
-                    array_push($result, $this->attachment_store.$filename);
+                //Check if we have files
+                if(isset($body_parts['disposition-filename'])){
+                    $filename = $body_parts['disposition-filename'];
+
+                    if(file_put_contents($this->attachment_store.$filename, base64_decode(substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']))) !== false){
+                        array_push($result, $this->attachment_store.$filename);
+                    }
                 }
             }
         }
@@ -137,22 +142,25 @@ class mail_parser {
      */
     private function get_text_body(){
         //Mime 1.1.1 == Text Body
-        $txt_body = mailparse_msg_get_part($this->message, "1.1.1");
-        $body_parts = mailparse_msg_get_part_data($txt_body);
-        
-        $body = substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']);        
-        $raw = quoted_printable_decode($body);
-        $lines = explode("\n", $raw);
-        $body = "";
-        foreach($lines as $line){       
-            if(preg_match("/(--_.*_$)/", $line) > 0){
-                //New mime part found.
-                break;
-            }else{
-                $body .= htmlspecialchars_decode(str_replace("\n", "\r\n", $line))."\r\n";
+        if(($txt_body = mailparse_msg_get_part($this->message, "1.1")) !== false){
+            $body_parts = mailparse_msg_get_part_data($txt_body);
+
+            $body = substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']);        
+            $raw = quoted_printable_decode($body);
+            $lines = explode("\n", $raw);
+            $body = "";
+            foreach($lines as $line){       
+                if(preg_match("/(--_.*_$)/", $line) > 0){
+                    //New mime part found.
+                    break;
+                }else{
+                    $body .= htmlspecialchars_decode(str_replace("\n", "\r\n", $line))."\r\n";
+                }
             }
+            return nl2br($body);
+        }else{
+            return "Could not get body.";
         }
-        return nl2br($body);
     }
     
     /**
@@ -164,26 +172,31 @@ class mail_parser {
     }
     
     /**
-     * Get the from part of the mail (name and e-mail address)
+     * Get the CC part of the mail (name and e-mail address)
+     * @return type
+     */
+    public function get_cc(){
+        $parts = mailparse_msg_get_part_data($this->message);
+        if(isset($parts['headers']['cc'])){
+            return mailparse_rfc822_parse_addresses($parts['headers']['cc']);               
+        }
+    }
+    
+    /**
+     * Get the FROM part of the mail (name and e-mail address)
      * @return type
      */
     public function get_from(){
         $parts = mailparse_msg_get_part_data($this->message);
-        return array(
-            "email" => $parts['headers']['x-originating-email'],
-            "name" => mailparse_rfc822_parse_addresses($parts['headers']['from'])
-        );        
+        return mailparse_rfc822_parse_addresses($parts['headers']['from']);               
     }
     
     /**
-     * Get the to part of the mail (name and e-mail address)
+     * Get the TO part of the mail (name and e-mail address)
      * @return type
      */
     public function get_to(){
         $parts = mailparse_msg_get_part_data($this->message);
-        return array(
-            "email" => $parts['headers']['x-originating-email'],
-            "name" => mailparse_rfc822_parse_addresses($parts['headers']['to'])
-        );
+        return mailparse_rfc822_parse_addresses($parts['headers']['to']);
     }
 }

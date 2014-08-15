@@ -45,7 +45,7 @@ class mail_parser {
     //Temp dir
     public $tempdir = "/tmp/";
     //Location where to save attachements
-    public $attachement_store = "/home/mailparser/attachments/";
+    public $attachment_store = "/home/mailparser/attachments/";
     
     public function __construct($raw_mail_message = "") {
         if($this->message == null){
@@ -80,7 +80,7 @@ class mail_parser {
             "datetime" => $this->get_datetime(),
             "subject" => $this->get_subject(),
             "body" => $this->get_text_body(),
-            "attachements" => $this->save_attachements()
+            "attachments" => $this->save_attachments()
         );
         return $result;
     }
@@ -104,10 +104,10 @@ class mail_parser {
     }
     
     /**
-     * Method to save attachements
+     * Method to save attachments
      * @return bool
      */
-    private function save_attachements(){
+    private function save_attachments(){
         $result = array();
         
         //Loop through all files;
@@ -119,8 +119,8 @@ class mail_parser {
                 $body_parts = mailparse_msg_get_part_data($mime_part);                
                 $filename = $body_parts['disposition-filename'];
                 
-                if(file_put_contents($this->attachement_store.$filename, base64_decode(substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']))) !== false){
-                    array_push($result, $this->attachement_store.$filename);
+                if(file_put_contents($this->attachment_store.$filename, base64_decode(substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']))) !== false){
+                    array_push($result, $this->attachment_store.$filename);
                 }
             }
         }

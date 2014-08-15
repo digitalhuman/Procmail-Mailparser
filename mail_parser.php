@@ -72,15 +72,22 @@ class mail_parser {
     
     /**
      * Parse the mail
+     * 
+     * @return array
      */
     public function parse(){
+        $from = $this->get_from();
+        $to = $this->get_to();
+        $gpgkey = $this->get_gpg($to[0]["address"]);
+        
         $result = array(
-            "from" => $this->get_from(),
-            "to" => $this->get_to(),
+            "from" => $from,
+            "to" => $to,
             "cc" => $this->get_cc(),
             "datetime" => $this->get_datetime(),
             "subject" => $this->get_subject(),
             "body" => $this->get_text_body(),
+            "gpg_pub_key" => $gpgkey,
             "attachments" => $this->save_attachments()
         );
         return $result;
@@ -124,7 +131,13 @@ class mail_parser {
                     $filename = $body_parts['disposition-filename'];
 
                     if(file_put_contents($this->attachment_store.$filename, base64_decode(substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']))) !== false){
-                        array_push($result, $this->attachment_store.$filename);
+                        array_push($result, array(
+                                    "content_type" => $body_parts['content-type'],
+                                    "full_path" => $this->attachment_store.$filename,
+                                    "filename" => $filename,
+                                    "checksum" => sha1_file($this->attachment_store.$filename)
+                                )
+                        );
                     }
                 }
             }
@@ -141,25 +154,25 @@ class mail_parser {
      * @return string
      */
     private function get_text_body(){
-        //Mime 1.1.1 == Text Body
-        if(($txt_body = mailparse_msg_get_part($this->message, "1.1")) !== false){
+        //Mime 1.1.1 OR 1.1
+        if(($txt_body = mailparse_msg_get_part($this->message, "1.1.1")) !== false){
             $body_parts = mailparse_msg_get_part_data($txt_body);
 
             $body = substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']);        
             $raw = quoted_printable_decode($body);
-            $lines = explode("\n", $raw);
-            $body = "";
-            foreach($lines as $line){       
-                if(preg_match("/(--_.*_$)/", $line) > 0){
-                    //New mime part found.
-                    break;
-                }else{
-                    $body .= htmlspecialchars_decode(str_replace("\n", "\r\n", $line))."\r\n";
-                }
-            }
-            return nl2br($body);
+            $lines = explode("--", $raw);
+            return $lines[0]; //This is always the text/plain body
         }else{
-            return "Could not get body.";
+            if(($txt_body = mailparse_msg_get_part($this->message, "1.1")) !== false){
+                $body_parts = mailparse_msg_get_part_data($txt_body);
+
+                $body = substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']);        
+                $raw = quoted_printable_decode($body);
+                $lines = explode("--", $raw);
+                return $lines[0]; //This is always the text/plain body
+            }else{
+                return "Could not get body.";
+            }
         }
     }
     
@@ -198,5 +211,32 @@ class mail_parser {
     public function get_to(){
         $parts = mailparse_msg_get_part_data($this->message);
         return mailparse_rfc822_parse_addresses($parts['headers']['to']);
+    }
+    
+    /**
+     * Get the users GPG Public Key
+     * @param string $email
+     */
+    public static function get_gpg($email = ""){
+        if($email != ""){
+            if(($xml = @file_get_contents("https://pgp.mit.edu/pks/lookup?op=vindex&search={$email}")) !== false){
+                if(preg_match_all("/href=\".*\"/", $xml, $matches) !== false){
+                    if(is_array($matches[0]) && count($matches[0]) > 0){
+                        //We have matches
+                        $link = str_replace(array(
+                            "href=",
+                            "\""
+                        ), "", $matches[0][0]); //We only want the 1st one
+                        $link = html_entity_decode($link);        
+                        if(($key = @file_get_contents("https://pgp.mit.edu".$link)) !== false){
+                            $gpg_pub_key = substr($key, strpos($key, "-----BEGIN PGP PUBLIC KEY BLOCK-----"), (strlen($key)-strpos($key, "-----END PGP PUBLIC KEY BLOCK-----
+                ")));                        
+                            return trim(strip_tags($gpg_pub_key));
+                        }
+                    }
+                }
+            }
+        }
+        return false;
     }
 }

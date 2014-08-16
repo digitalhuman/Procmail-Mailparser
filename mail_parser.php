@@ -171,9 +171,19 @@ class mail_parser {
                 $lines = explode("--", $raw);
                 return $lines[0]; //This is always the text/plain body
             }else{
-                return "Could not get body.";
+                if(($txt_body = mailparse_msg_get_part($this->message, "1")) !== false){
+                    $body_parts = mailparse_msg_get_part_data($txt_body);
+
+                    $body = substr($this->raw_data, $body_parts['starting-pos-body'], $body_parts['ending-pos-body']);        
+                    $raw = quoted_printable_decode($body);
+                    $lines = explode("--", $raw);
+                    return $lines[0]; //This is always the text/plain body
+                }else{
+                    return "Could not get body.";
+                }                
             }
         }
+        return "Could not get body.";
     }
     
     /**

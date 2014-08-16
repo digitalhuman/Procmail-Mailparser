@@ -217,21 +217,52 @@ class mail_parser {
      * Get the users GPG Public Key
      * @param string $email
      */
-    public static function get_gpg($email = ""){
+    public function get_gpg($email = ""){
         if($email != ""){
             if(($xml = @file_get_contents("https://pgp.mit.edu/pks/lookup?op=vindex&search={$email}")) !== false){
-                if(preg_match_all("/href=\".*\"/", $xml, $matches) !== false){
+                if(preg_match_all("/\<a href=\".*\"?+\>/", $xml, $matches) !== false){
                     if(is_array($matches[0]) && count($matches[0]) > 0){
-                        //We have matches
-                        $link = str_replace(array(
-                            "href=",
-                            "\""
-                        ), "", $matches[0][0]); //We only want the 1st one
-                        $link = html_entity_decode($link);        
-                        if(($key = @file_get_contents("https://pgp.mit.edu".$link)) !== false){
-                            $gpg_pub_key = substr($key, strpos($key, "-----BEGIN PGP PUBLIC KEY BLOCK-----"), (strlen($key)-strpos($key, "-----END PGP PUBLIC KEY BLOCK-----
-                ")));                        
-                            return trim(strip_tags($gpg_pub_key));
+
+                        $valid_date = "";
+                        $link = "";
+
+                        foreach($matches[0] as $match){
+                            $parts = explode("</a>", $match);
+
+                            //Check for dates and valid until date
+                            preg_match_all("/([0-9]{4}\-[0-9]{2}\-[0-9]{2})/", $match, $dates);
+                            if(is_array($dates[1]) && count($dates[1]) > 1){
+
+                                //Check validity
+                                if(strtotime(trim($dates[1][1])) > time()){
+
+                                    $valid_date = strtotime(trim($dates[1][1]));
+                                    //We found the right key;
+                                    preg_match("/href=\".*\"/", $parts[0], $match2);
+                                    if(is_array($match2) && count($match2) > 0){
+                                        $link = $match2[0];
+                                        break;
+                                    }
+                                }
+
+                            }
+
+                        }
+                        if($link != ""){
+                            //We have matches
+                            $link = str_replace(array(
+                                "href=",
+                                "\""
+                            ), "", $link); //We only want the 1st one
+                            $link = html_entity_decode($link);        
+                            if(($key = @file_get_contents("https://pgp.mit.edu".$link)) !== false){
+                                $gpg_pub_key = substr($key, strpos($key, "-----BEGIN PGP PUBLIC KEY BLOCK-----"), (strlen($key)-strpos($key, "-----END PGP PUBLIC KEY BLOCK-----
+                    ")));                        
+                                return array(
+                                    "key" => trim(strip_tags($gpg_pub_key)),
+                                    "date" => date("Y-m-d", $valid_date)
+                                );
+                            }
                         }
                     }
                 }
